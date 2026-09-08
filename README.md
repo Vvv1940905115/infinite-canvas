@@ -13,6 +13,15 @@
 
 **重要事实（本机已核对）**：当前 `src/` 源代码里**已没有任何后端数据库（PocketBase）调用**，所以这是一个**纯前端应用**，本地不需要启动后端即可完整使用全部画布功能。下文所有"含 PocketBase"的步骤都是**可选**的，日常开发用纯前端方式即可。
 
+**当前核心功能一览：**
+- **画布编排**：节点拖拽 / 连线 / 框选 / 无限缩放 / 复制粘贴 / 撤销重做；支持文本、图片、视频、音频、角色、场景、分镜格子、视频合成、快捷剪辑等节点类型。
+- **节点内 AI 生成**（无需独立后端，由本地 Vite 开发服务器内置代理转发 AI 请求，规避浏览器跨域限制）：
+  - 文本节点：文案 / 歌词生成（Gemini、OpenAI）
+  - 图片节点：文生图、参考图生图（Gemini 2.5 Flash Image、OpenAI gpt-image-1）
+  - 视频节点：Seedance 2.0 / 2.5 文生视频（火山方舟，异步任务 + 轮询，产物自动下载落盘到资源库「视频」文件夹）；AI 面板提供「文生视频 / 首帧 / 首尾帧 / 视频编辑 / 视频延长 / 全能参考」六种模式，会随当前接入素材实时判断可用并自动切换
+  - 音频节点：MiniMax 语音合成 / 音乐生成（需额外填 GroupId）
+- **模型设置**：画布右上角齿轮图标 →「设置 → 模型设置」，按厂商填写 API Key 并可覆盖上游模型 ID；密钥只存在浏览器 `localStorage`，经本地代理转发给对应服务商，不会写入仓库。
+
 ---
 
 ## 一、系统与环境要求（先看这里，避免踩坑）
@@ -139,6 +148,8 @@ VIBEX_APP_ID=app-5a0d04f9ad6a4192bc6313684dba8b34
 
 > `.env.local` 已加入 `.gitignore`，不会提交到仓库，可放心保留。
 
+> 💡 **AI 的 API Key 不需要写进 `.env.local`**。打开应用后，点画布右上角齿轮图标 →「设置 → 模型设置」，按厂商填入即可（只存浏览器本地）。`.env.local` 里的 `VIBEX_APP_ID` 仅用于与 VibeX 在线环境保持一致。
+
 ---
 
 ## 六、第五步：启动开发服务器（三种方式任选）
@@ -227,21 +238,29 @@ kill -9 <PID>
 d:\infinite-canvas\
 ├── src\
 │   ├── components\canvas\
-│   │   ├── CanvasNode.tsx      # 画布节点（含标题编辑、锚点连线）
-│   │   ├── EdgesLayer.tsx      # 连线层（虚线箭头渲染）
-│   │   ├── AddMenu.tsx         # 添加节点菜单
-│   │   ├── CanvasToolbar.tsx   # 顶部工具栏
-│   │   └── nodeTypes.ts        # 节点类型定义
+│   │   ├── CanvasNode.tsx       # 画布节点：标题编辑、锚点连线、底部 AI 生成面板（含视频节点六种模式 Tab）
+│   │   ├── EdgesLayer.tsx       # 连线层（虚线箭头渲染）
+│   │   ├── AddMenu.tsx          # 添加节点菜单
+│   │   ├── CanvasToolbar.tsx    # 顶部工具栏
+│   │   ├── SettingsPanel.tsx    # 设置侧栏：路径设置 + 模型设置（API Key / 模型 ID 覆盖）
+│   │   ├── AssetLibraryPanel.tsx # 资源库面板（浏览 / 上传素材）
+│   │   └── nodeTypes.ts         # 节点类型定义
 │   ├── pages\Canvas\
-│   │   ├── CanvasPage.tsx      # 画布页面
-│   │   ├── index.tsx           # 页面入口
-│   │   └── useCanvas.ts        # 画布状态管理（连线/标题逻辑都在这里）
-│   ├── App.tsx / main.tsx      # 应用根
-│   └── index.css               # 全局样式
-├── vibex-local\                # 本地启动脚本 + 配置（勿改平台集成部分）
-├── vite.config.ts             # Vite 配置（含 VibeX 集成，勿删 rhSourcePlugin）
-├── package.json               # 依赖与脚本
-└── README.md                  # 本文档
+│   │   ├── CanvasPage.tsx       # 画布页面
+│   │   ├── index.tsx            # 页面入口
+│   │   └── useCanvas.ts         # 画布状态管理（连线 / 素材流 / 历史记录）
+│   ├── lib\
+│   │   ├── aiClient.ts          # AI 请求封装（调本地代理 /api/ai/...）
+│   │   ├── aiModels.ts          # 厂商与模型注册表（图片/视频/音频/文本）
+│   │   └── aiSettings.ts        # AI 设置读写（localStorage + 跨标签同步）
+│   ├── App.tsx / main.tsx       # 应用根
+│   └── index.css                # 全局样式
+├── aiServerPlugin.ts           # Vite dev 代理：/api/ai/... 转发 Gemini/OpenAI/火山方舟/MiniMax，视频生成后落盘
+├── assetLibraryPlugin.ts       # 资源库静态服务（/api/asset）
+├── vibex-local\                 # 本地启动脚本 + 配置（勿改平台集成部分）
+├── vite.config.ts              # Vite 配置（含 VibeX 集成，勿删 rhSourcePlugin）
+├── package.json                # 依赖与脚本
+└── README.md                   # 本文档
 ```
 
 ---
@@ -325,6 +344,9 @@ python3 .vibex/skills/vibex-app-source-roundtrip/scripts/package_vibex_upload.py
 **Q6：连不上 PocketBase / 7000 端口**
 → 纯前端不需要它，忽略即可；只有用一键完整启动脚本才会拉起。
 
+**Q7：AI 生成报错 / 401 / 一直转圈**
+→ 先确认：① 在右上角齿轮「设置 → 模型设置」里对应厂商的 API Key 已填写（MiniMax 还要填 GroupId；Seedance 可在此修改火山方舟 base URL）；② 页面是通过 `npm run dev` 启动的 Vite 服务访问的——AI 请求走本地代理（`aiServerPlugin.ts`），直接双击 HTML 或跨域名访问会因 CORS 失败。视频是异步任务，最长约轮询 10 分钟，期间请保持页面打开。
+
 ---
 
 ## 十四、一句话总结
@@ -332,3 +354,38 @@ python3 .vibex/skills/vibex-app-source-roundtrip/scripts/package_vibex_upload.py
 > 装好 Node 20.19+ → `npm install` → `node node_modules/vite/bin/vite.js` → 浏览器开 `http://127.0.0.1:8000`，完事。
 
 有任何问题先看本文「十三、FAQ」，或检查终端报错信息。
+
+---
+
+## 十五、AI 生成能力使用指引
+
+### 1. 前置：一定要用 Vite 服务打开页面
+AI 请求由 `aiServerPlugin.ts` 在本地 Vite 开发服务器内代理（`/api/ai/image`、`/api/ai/video`、`/api/ai/tts`、`/api/ai/text`），所以必须按本文第六节方式启动后访问 **http://127.0.0.1:8000**，不要直接双击 `index.html`。
+
+### 2. 配置各厂商密钥（一次性）
+点画布**右上角齿轮图标** →「设置」：
+- **路径设置（可选）**：可自定义「资源库路径」，AI 生成的图片 / 视频 / 音频会按「图片 / 视频 / 音频」子目录保存到这里（默认 `output/assets`）；「画布自动保存路径」用于画布变更后自动导出 JSON。
+- **模型设置（必填）**：按厂商分组填写：
+  - **Gemini（谷歌）**：图片 / 文本生成用，填 Google AI Studio 的 API Key（`AIza...`）
+  - **OpenAI**：图片 / 文本生成用，填平台 API Key
+  - **Seedance（字节 · 火山方舟）**：视频生成用，填方舟 `ARK_API_KEY`；base URL 默认 `https://ark.cn-beijing.volces.com/api/v3`，可按需修改
+  - **MiniMax**：语音合成 / 音乐生成用，需要 **API Key + GroupId** 两项
+
+密钥只保存在本机浏览器（`localStorage`），不会写入项目文件，请勿在共享电脑上使用；「恢复默认」可一键清空。
+
+> 若某个模型默认 ID 不是方舟 / MiniMax 控制台里的实际值（例如 Seedance 2.5），会调用失败——到「模型设置」里把该模型对应的上游模型 ID 覆盖为控制台真实 ID 即可，改完立即生效。
+
+### 3. 开始生成
+1. 点左上角圆形 **+** 添加节点：文本 / 图片 / 视频 / 音频 等。
+2. 选中节点，底部出现 AI 生成区：输入描述 → 选择模型（同一类型可切换模型）→ 点右侧生成按钮。
+3. **图片节点**：可先上传参考图或从画布选择图片节点接入，做参考图生图。
+4. **视频节点**：面板上方有六个模式 Tab——**全能参考 / 视频编辑 / 文生视频 / 首帧 / 首尾帧 / 视频延长**：
+   - 可用性由**当前接入素材**实时决定（连线接入的图片 / 视频、手动追加的输入素材都会被统计），不满足条件的 Tab 置灰且不可点，鼠标悬停可看到原因；
+   - 素材变化时自动选中与素材最匹配的 Tab：纯文字→文生视频；1 张图→首帧；2 张图→首尾帧；≥3 张图→全能参考；图片+视频混合→全能参考；纯视频→视频编辑；
+   - 一旦手动点选可用 Tab，就不再被自动切换。
+5. 生成结果会保存到资源库路径并显示在节点上，可直接删除 / 替换 / 连线复用。
+
+### 4. 生成产物去哪了
+- 图片：客户端保存到资源库「图片」文件夹，节点内直接展示。
+- 视频：任务完成后由本地代理把视频下载到资源库「视频」文件夹（默认 `output/assets/视频`），节点内可播放预览。
+- 音频：返回音频并保存到资源库「音频」文件夹。
