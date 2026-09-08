@@ -1,0 +1,27 @@
+项目现在正在运行，浏览器预览正常、无报错。
+
+当前可访问地址
+画布应用	http://127.0.0.1:8000	✅ 运行中
+PocketBase 后端	http://127.0.0.1:7000	✅ 运行中（前端已不依赖，可忽略）
+
+项目是纯前端画布应用（不再依赖 PocketBase），最简单的启动方式：
+
+方式一：只启动前端（推荐）
+node node_modules/vite/bin/vite.js
+
+开发者端口-然后访问 http://127.0.0.1:8000
+
+cd d:\infinite-canvas
+pnpm dev
+
+
+用 node 直接调 vite 是为了绕过 pnpm 的 sandbox 限制（之前 pnpm install 因无法访问全局 store 报错）。
+
+
+方式二：一键完整启动（含 PocketBase 后端） 双击 vibex-local\start-windows.bat，或：
+powershell -ExecutionPolicy Bypass -File .\vibex-local\start-windows.ps1
+
+方式三：标准命令（如 pnpm 权限正常时）
+pnpm dev
+
+需要我现在重启一下（比如停掉旧进程、用最简方式重新启动），还是保持当前运行状态即可？
