@@ -153,7 +153,6 @@ export function CanvasPage(p: ReturnType<typeof useCanvas>) {
             onLinkStart={p.onLinkStart}
             onLinkComplete={p.completeLinkTo}
             onTogglePanel={p.toggleAiPanel}
-            onOpenAdd={p.openMenu}
             onImageUpload={p.updateImageUrl}
             onImageRemove={p.removeImageUrl}
             connectedMedia={p.nodeMediaMap[node.id]}
@@ -164,6 +163,21 @@ export function CanvasPage(p: ReturnType<typeof useCanvas>) {
                 imageUrl: n.imageUrl as string,
                 label: n.content?.trim() || "图片",
               }))}
+            videoNodes={p.nodes
+              .filter((n) => n.kind === "video" && n.imageUrl)
+              .map((n) => ({
+                id: n.id,
+                imageUrl: n.imageUrl as string,
+                label: n.content?.trim() || "视频",
+              }))}
+            audioNodes={p.nodes
+              .filter((n) => n.kind === "audio" && n.imageUrl)
+              .map((n) => ({
+                id: n.id,
+                imageUrl: n.imageUrl as string,
+                label: n.content?.trim() || "音频",
+              }))}
+            onLinkNodes={p.linkNodes}
             onSlotUpload={p.updateSlotImage}
             onSlotRemove={p.removeSlotImage}
             onAssetSaved={() => setAssetRefreshKey((k) => k + 1)}

@@ -39,6 +39,53 @@ function upstreamError(data: any, fallback: string): string {
   return data?.error?.message || fallback
 }
 
+function resolveAssetRoot(reqRoot?: string | null): string {
+  const normalized = (reqRoot || "").trim().replace(/\\/g, "/").replace(/\/+$/, "")
+  if (normalized) return path.resolve(normalized)
+  return path.resolve(process.cwd(), "output/assets")
+}
+
+function parseDataUrl(url: string): { mimeType: string; data: string } | null {
+  const m = url.match(/^data:([^;]+);base64,(.+)$/)
+  if (!m) return null
+  return { mimeType: m[1], data: m[2] }
+}
+
+function resolveAssetReference(url: string): { mimeType: string; data: string } | null {
+  try {
+    const u = new URL(url, "http://localhost")
+    if (u.pathname !== "/api/asset") return null
+    const category = u.searchParams.get("category") || "其他"
+    const name = u.searchParams.get("name") || ""
+    const root = resolveAssetRoot(u.searchParams.get("root"))
+    if (!name) return null
+    const filePath = path.join(root, category, name)
+    if (!fs.existsSync(filePath)) return null
+    const ext = path.extname(filePath).toLowerCase()
+    const mimeType =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".jpg" || ext === ".jpeg"
+          ? "image/jpeg"
+          : ext === ".webp"
+            ? "image/webp"
+            : ext === ".gif"
+              ? "image/gif"
+              : "application/octet-stream"
+    return { mimeType, data: fs.readFileSync(filePath).toString("base64") }
+  } catch {
+    return null
+  }
+}
+
+function referenceToPart(url: string): { inlineData: { mimeType: string; data: string } } | null {
+  const data = parseDataUrl(url)
+  if (data) return { inlineData: data }
+  const asset = resolveAssetReference(url)
+  if (asset) return { inlineData: asset }
+  return null
+}
+
 async function fetchJson(url: string, init?: RequestInit) {
   const res = await fetch(url, init)
   let data: any = null
@@ -70,11 +117,46 @@ export function aiServerPlugin() {
           } catch {
             return sendJson(res, 400, { ok: false, error: "invalid JSON body" })
           }
-          const { model, prompt, apiKey } = body
+          const {
+            model,
+            prompt,
+            apiKey,
+            ratio,
+            width,
+            height,
+            resolution: resParam,
+            duration: durParam,
+            generateAudio,
+          } = body
           const base = (body.base || ARK_DEFAULT_BASE).replace(/\/+$/, "")
           if (!model || !prompt?.trim() || !apiKey?.trim()) {
             return sendJson(res, 400, { ok: false, error: "缺少 model/prompt/apiKey" })
           }
+          // 自定义宽高时按最接近的预设比例推导；未指定则自适应
+          const effectiveRatio = (() => {
+            if (ratio) return ratio
+            const w = Number(width) || 0
+            const h = Number(height) || 0
+            if (!w || !h) return "adaptive"
+            const r = w / h
+            const list: [string, number][] = [
+              ["16:9", 16 / 9],
+              ["9:16", 9 / 16],
+              ["1:1", 1],
+              ["4:3", 4 / 3],
+              ["3:4", 3 / 4],
+              ["21:9", 21 / 9],
+            ]
+            let best = list[0]
+            for (const it of list) if (Math.abs(it[1] - r) < Math.abs(best[1] - r)) best = it
+            return best[0]
+          })()
+          // 分辨率档位：优先取面板选择，否则按自定义高度推导（Seedance：480p / 720p / 1080p）
+          const resolution =
+            resParam || (Number(height) >= 1080 ? "1080p" : Number(height) > 0 ? "720p" : "720p")
+          // 生成时长：Seedance 取值 4-12 秒整数
+          const duration = Math.min(12, Math.max(4, Number(durParam) || 5))
+          const audioCmd = typeof generateAudio === "boolean" ? ` --generate_audio ${generateAudio}` : ""
           try {
             const { data } = await fetchJson(`${base}/contents/generations/tasks`, {
               method: "POST",
@@ -82,7 +164,15 @@ export function aiServerPlugin() {
                 Authorization: `Bearer ${apiKey}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({ model, content: [{ type: "text", text: prompt }] }),
+              body: JSON.stringify({
+                model,
+                content: [
+                  {
+                    type: "text",
+                    text: `${prompt} --ratio ${effectiveRatio} --resolution ${resolution} --duration ${duration}${audioCmd}`,
+                  },
+                ],
+              }),
               signal: AbortSignal.timeout(30_000),
             })
             const taskId = data?.id
@@ -211,20 +301,44 @@ export function aiServerPlugin() {
         } catch {
           return sendJson(res, 400, { ok: false, error: "invalid JSON body" })
         }
-        const { provider, model, prompt, apiKey } = body
+        const { provider, model, prompt, apiKey, aspectRatio, width, height, quality, imageRes } = body
         if (!provider || !model || !prompt?.trim() || !apiKey?.trim()) {
           return sendJson(res, 400, { ok: false, error: "缺少 provider/model/prompt/apiKey" })
         }
+        // OpenAI 仅接受固定几组尺寸，按方向就近映射；自适应交给模型（auto）
+        const openaiSize = (() => {
+          const w = Number(width) || 0
+          const h = Number(height) || 0
+          if (w > 0 && h > 0) return w === h ? "1024x1024" : w > h ? "1536x1024" : "1024x1536"
+          if (aspectRatio === "adaptive") return "auto"
+          if (aspectRatio === "1:1") return "1024x1024"
+          if (aspectRatio === "16:9" || aspectRatio === "4:3") return "1536x1024"
+          if (aspectRatio === "9:16" || aspectRatio === "3:4") return "1024x1536"
+          return "1024x1024"
+        })()
         try {
           if (provider === "gemini") {
+            const refParts = ((body.references || []) as string[])
+              .map(referenceToPart)
+              .filter((p): p is { inlineData: { mimeType: string; data: string } } => p !== null)
             const { status, data } = await fetchJson(
               `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
               {
                 method: "POST",
                 headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
-                  generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+                  contents: [{ parts: [...refParts, { text: prompt }] }],
+                  generationConfig: {
+                    responseModalities: ["TEXT", "IMAGE"],
+                    ...(aspectRatio && aspectRatio !== "adaptive" || imageRes
+                      ? {
+                          imageConfig: {
+                            ...(aspectRatio && aspectRatio !== "adaptive" ? { aspectRatio } : {}),
+                            ...(imageRes ? { imageSize: imageRes.toUpperCase() } : {}),
+                          },
+                        }
+                      : {}),
+                  },
                 }),
                 signal: AbortSignal.timeout(120_000),
               },
@@ -244,7 +358,14 @@ export function aiServerPlugin() {
             const { status, data } = await fetchJson("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-              body: JSON.stringify({ model, prompt, size: "1024x1024", n: 1, response_format: "b64_json" }),
+              body: JSON.stringify({
+                model,
+                prompt,
+                size: openaiSize,
+                n: 1,
+                response_format: "b64_json",
+                ...(quality ? { quality } : {}),
+              }),
               signal: AbortSignal.timeout(120_000),
             })
             const b64 = data?.data?.[0]?.b64_json
@@ -259,6 +380,74 @@ export function aiServerPlugin() {
           return sendJson(res, 400, { ok: false, error: `未知 provider: ${provider}` })
         } catch (err: any) {
           return sendJson(res, 502, { ok: false, error: err?.message || "图片生成失败" })
+        }
+      })
+
+      // ---- POST /api/ai/text：文本 / 歌词生成，同步返回文本 ----
+      server.middlewares.use("/api/ai/text", async (req: any, res: any, next: any) => {
+        if (req.method !== "POST") return next()
+        let body: any
+        try {
+          body = await readJsonBody(req)
+        } catch {
+          return sendJson(res, 400, { ok: false, error: "invalid JSON body" })
+        }
+        const { provider, model, prompt, task } = body
+        const apiKey = body.apiKey?.trim()
+        if (!provider || !model || !prompt?.trim() || !apiKey) {
+          return sendJson(res, 400, { ok: false, error: "缺少 provider/model/prompt/apiKey" })
+        }
+        const system =
+          task === "lyrics"
+            ? "你是一位专业歌词创作者。请根据用户描述创作一段歌词，只输出歌词正文，不要解释、不要加引号或额外说明。"
+            : "你是一位专业文案作者。请根据用户描述生成一段文本内容，只输出正文，不要解释、不要加引号或额外说明。"
+        try {
+          if (provider === "gemini") {
+            const { status, data } = await fetchJson(
+              `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+              {
+                method: "POST",
+                headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: `${system}\n\n${prompt}` }] }],
+                }),
+                signal: AbortSignal.timeout(120_000),
+              },
+            )
+            const text = data?.candidates?.[0]?.content?.parts?.find((p: any) => p?.text)?.text
+            if (!text) {
+              return sendJson(res, status >= 500 ? 502 : 400, {
+                ok: false,
+                error: upstreamError(data, "上游未返回文本"),
+              })
+            }
+            return sendJson(res, 200, { ok: true, text })
+          }
+          if (provider === "openai") {
+            const { status, data } = await fetchJson("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model,
+                messages: [
+                  { role: "system", content: system },
+                  { role: "user", content: prompt },
+                ],
+              }),
+              signal: AbortSignal.timeout(120_000),
+            })
+            const text = data?.choices?.[0]?.message?.content
+            if (!text) {
+              return sendJson(res, status >= 500 ? 502 : 400, {
+                ok: false,
+                error: upstreamError(data, "上游未返回文本"),
+              })
+            }
+            return sendJson(res, 200, { ok: true, text })
+          }
+          return sendJson(res, 400, { ok: false, error: `未知 provider: ${provider}` })
+        } catch (err: any) {
+          return sendJson(res, 502, { ok: false, error: err?.message || "文本生成失败" })
         }
       })
     },

@@ -41,7 +41,7 @@ export interface NodeMeta {
 }
 
 export const NODE_META: Record<NodeKind, NodeMeta> = {
-  text: { label: "文本", icon: Type, w: 240, h: 220, hint: "台词、备注与标题文字" },
+  text: { label: "文本", icon: Type, w: 240, h: 220, hint: "AI 生成文案、歌词与文本内容" },
   image: { label: "图片", icon: Image, w: 244, h: 184, hint: "概念图、剧照参考" },
   video: { label: "视频", icon: Video, w: 264, h: 176, hint: "镜头片段、参考影像" },
   audio: { label: "音频", icon: Music, w: 228, h: 128, hint: "配乐、音效与台词录音" },

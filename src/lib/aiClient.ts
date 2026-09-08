@@ -18,10 +18,34 @@ export interface GenerateImageReq {
   model: string
   prompt: string
   apiKey: string
+  /** 画面比例（9:16 / 16:9 / 1:1 / 3:4 / 4:3），自定义宽高时可不传 */
+  aspectRatio?: string
+  /** 自定义输出宽（px），与 height 一起覆盖预设比例 */
+  width?: number
+  height?: number
+  /** 图像质量（OpenAI gpt-image-1：low / medium / high） */
+  quality?: "low" | "medium" | "high"
+  /** 图像分辨率（Gemini：1k / 2k / 4k） */
+  imageRes?: "1k" | "2k" | "4k"
+  /** 参考图片 data URL 或 /api/asset 路径 */
+  references?: string[]
 }
 
 export async function generateImage(req: GenerateImageReq): Promise<{ dataUrl: string }> {
   return post("/api/ai/image", req)
+}
+
+export interface GenerateTextReq {
+  provider: AiProvider
+  model: string
+  prompt: string
+  apiKey: string
+  /** text = 普通文本，lyrics = 歌词 */
+  task: "text" | "lyrics"
+}
+
+export async function generateText(req: GenerateTextReq): Promise<{ text: string }> {
+  return post("/api/ai/text", req)
 }
 
 export interface GenerateSpeechReq {
@@ -47,6 +71,17 @@ export interface SubmitVideoReq {
   prompt: string
   apiKey: string
   base: string
+  /** 画面比例（16:9 / 4:3 / 1:1 / 3:4 / 9:16 / 21:9 / adaptive） */
+  ratio?: string
+  /** 自定义输出宽高（px） */
+  width?: number
+  height?: number
+  /** 分辨率档位（480p / 720p / 1080p） */
+  resolution?: string
+  /** 生成时长（秒，4-12） */
+  duration?: number
+  /** 是否同步生成音频 */
+  generateAudio?: boolean
 }
 
 export async function submitVideoTask(req: SubmitVideoReq): Promise<{ taskId: string }> {

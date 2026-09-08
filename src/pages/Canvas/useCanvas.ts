@@ -397,6 +397,23 @@ export function useCanvas() {
     [commitHistory],
   )
 
+  /** 直接在两个节点间建立连线（供 AI 面板「从画布选择」追加输入时调用），方向按视觉位置左→右 */
+  const linkNodes = useCallback(
+    (aId: string, bId: string) => {
+      if (aId === bId) return
+      const a = nodesRef.current.find((n) => n.id === aId)
+      const b = nodesRef.current.find((n) => n.id === bId)
+      if (!a || !b) return
+      const from = a.x <= b.x ? a.id : b.id
+      const to = from === a.id ? b.id : a.id
+      const edgeId = `edge-${from}->${to}`
+      if (edgesRef.current.some((e) => e.id === edgeId)) return
+      commitHistory()
+      setEdges((list) => [...list, { id: edgeId, from, to }])
+    },
+    [commitHistory],
+  )
+
   const finishDrag = useCallback(() => {
     const drag = dragRef.current
     dragRef.current = null
@@ -1060,5 +1077,6 @@ export function useCanvas() {
     updateSlotImage,
     removeSlotImage,
     completeLinkTo,
+    linkNodes,
   }
 }

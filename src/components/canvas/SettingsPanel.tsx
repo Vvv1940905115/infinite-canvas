@@ -3,7 +3,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { PATH_META, openInExplorer, type PathConfig, type PathKey } from "@/lib/paths"
-import { AUDIO_MODELS, IMAGE_MODELS, VIDEO_MODELS } from "@/lib/aiModels"
+import {
+  AUDIO_MODELS,
+  IMAGE_MODELS,
+  TEXT_MODELS,
+  VIDEO_MODELS,
+  type AiModel,
+  type AiProvider,
+} from "@/lib/aiModels"
 import type { AiSection, AiSettings } from "@/lib/aiSettings"
 
 interface SettingsPanelProps {
@@ -17,7 +24,83 @@ interface SettingsPanelProps {
   onClose: () => void
 }
 
-const AI_MODELS = [...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS]
+const AI_MODELS = [...TEXT_MODELS, ...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS]
+
+/** 模型设置按厂商分组展示的顺序 */
+const PROVIDER_GROUPS: { provider: AiProvider; title: string }[] = [
+  { provider: "gemini", title: "Gemini（谷歌）" },
+  { provider: "openai", title: "OpenAI" },
+  { provider: "seedance", title: "Seedance（字节 · 火山方舟）" },
+  { provider: "minimax", title: "MiniMax" },
+]
+
+interface FieldProps {
+  label: string
+  value: string
+  placeholder?: string
+  onChange: (value: string) => void
+}
+
+/** 厂商卡片内普通文本字段 */
+function ProviderTextField({ label, value, placeholder, onChange }: FieldProps) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-foreground">{label}</span>
+      <Input
+        value={value}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1"
+      />
+    </label>
+  )
+}
+
+/** 厂商卡片内 API Key 密码字段 */
+function ProviderPasswordField({ label, value, placeholder, onChange }: FieldProps) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-foreground">{label}</span>
+      <Input
+        type="password"
+        value={value}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1"
+      />
+    </label>
+  )
+}
+
+/** 厂商卡片内单个模型 ID 覆盖字段 */
+function ProviderModelField({
+  model,
+  value,
+  onChange,
+}: {
+  model: AiModel
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="block text-sm font-medium text-foreground">{model.label} · 模型 ID</span>
+      <Input
+        value={value}
+        spellCheck={false}
+        autoComplete="off"
+        placeholder={model.defaultModelId}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1"
+      />
+      {model.help && <span className="block text-xs text-muted-foreground">{model.help}</span>}
+    </label>
+  )
+}
 
 /**
  * 设置面板：直接嵌入画布界面右侧，无需弹窗 / 跳转。
@@ -112,92 +195,75 @@ export function SettingsPanel({
           <p className="text-xs leading-relaxed text-muted-foreground">
             API Key 仅保存在本地浏览器，经本地代理转发给对应 AI 服务商，不会上传到其他服务器。请勿在共享电脑上使用。
           </p>
-          <label className="block space-y-1.5">
-            <span className="block text-sm font-medium text-foreground">Gemini API Key</span>
-            <Input
-              type="password"
-              value={ai.apiKeys.gemini}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="AIza..."
-              onChange={(e) => onAiUpdate("apiKeys", "gemini", e.target.value)}
-              className="flex-1"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="block text-sm font-medium text-foreground">OpenAI API Key</span>
-            <Input
-              type="password"
-              value={ai.apiKeys.openai}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="sk-..."
-              onChange={(e) => onAiUpdate("apiKeys", "openai", e.target.value)}
-              className="flex-1"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="block text-sm font-medium text-foreground">Seedance API Key（火山方舟）</span>
-            <Input
-              type="password"
-              value={ai.apiKeys.seedance}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="ARK_API_KEY"
-              onChange={(e) => onAiUpdate("apiKeys", "seedance", e.target.value)}
-              className="flex-1"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="block text-sm font-medium text-foreground">MiniMax API Key（语音 / 音乐）</span>
-            <Input
-              type="password"
-              value={ai.apiKeys.minimax}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="eyJ..."
-              onChange={(e) => onAiUpdate("apiKeys", "minimax", e.target.value)}
-              className="flex-1"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="block text-sm font-medium text-foreground">MiniMax GroupId</span>
-            <Input
-              value={ai.apiKeys.minimaxGroup}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="MiniMax 账号 GroupId"
-              onChange={(e) => onAiUpdate("apiKeys", "minimaxGroup", e.target.value)}
-              className="flex-1"
-            />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="block text-sm font-medium text-foreground">火山方舟 Base URL</span>
-            <Input
-              value={ai.baseUrl}
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="https://ark.cn-beijing.volces.com/api/v3"
-              onChange={(e) => onAiUpdate("baseUrl", "", e.target.value)}
-              className="flex-1"
-            />
-          </label>
-          {AI_MODELS.map((m) => (
-            <label key={m.id} className="block space-y-1.5">
-              <span className="block text-sm font-medium text-foreground">
-                {m.label} · 模型 ID
-              </span>
-              <Input
-                value={ai.modelIds[m.id] || ""}
-                spellCheck={false}
-                autoComplete="off"
-                placeholder={m.defaultModelId}
-                onChange={(e) => onAiUpdate("modelIds", m.id, e.target.value)}
-                className="flex-1"
-              />
-              {m.help && <span className="block text-xs text-muted-foreground">{m.help}</span>}
-            </label>
-          ))}
+          {PROVIDER_GROUPS.map(({ provider, title }) => {
+            const models = AI_MODELS.filter((m) => m.provider === provider)
+            return (
+              <div
+                key={provider}
+                className="space-y-2 rounded-xl border border-border/80 bg-background/50 p-3"
+              >
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {title}
+                </h4>
+                {provider === "gemini" && (
+                  <ProviderPasswordField
+                    label="API Key"
+                    value={ai.apiKeys.gemini}
+                    placeholder="AIza..."
+                    onChange={(v) => onAiUpdate("apiKeys", "gemini", v)}
+                  />
+                )}
+                {provider === "openai" && (
+                  <ProviderPasswordField
+                    label="API Key"
+                    value={ai.apiKeys.openai}
+                    placeholder="sk-..."
+                    onChange={(v) => onAiUpdate("apiKeys", "openai", v)}
+                  />
+                )}
+                {provider === "seedance" && (
+                  <>
+                    <ProviderPasswordField
+                      label="API Key（火山方舟）"
+                      value={ai.apiKeys.seedance}
+                      placeholder="ARK_API_KEY"
+                      onChange={(v) => onAiUpdate("apiKeys", "seedance", v)}
+                    />
+                    <ProviderTextField
+                      label="Base URL"
+                      value={ai.baseUrl}
+                      placeholder="https://ark.cn-beijing.volces.com/api/v3"
+                      onChange={(v) => onAiUpdate("baseUrl", "", v)}
+                    />
+                  </>
+                )}
+                {provider === "minimax" && (
+                  <>
+                    <ProviderPasswordField
+                      label="API Key（语音 / 音乐）"
+                      value={ai.apiKeys.minimax}
+                      placeholder="eyJ..."
+                      onChange={(v) => onAiUpdate("apiKeys", "minimax", v)}
+                    />
+                    <ProviderTextField
+                      label="GroupId"
+                      value={ai.apiKeys.minimaxGroup}
+                      placeholder="MiniMax 账号 GroupId"
+                      onChange={(v) => onAiUpdate("apiKeys", "minimaxGroup", v)}
+                    />
+                  </>
+                )}
+                {models.map((m) => (
+                  <ProviderModelField
+                    key={m.id}
+                    model={m}
+                    value={ai.modelIds[m.id] || ""}
+                    onChange={(v) => onAiUpdate("modelIds", m.id, v)}
+                  />
+                ))}
+              </div>
+            )
+          })}
         </section>
       </div>
 

@@ -9,13 +9,30 @@ export interface AiModel {
   /** 下拉展示名 */
   label: string
   provider: AiProvider
-  kind: "image" | "video" | "audio"
+  kind: "image" | "video" | "audio" | "text"
   /** 音频模型子任务：tts = 文字转语音，music = 音乐生成 */
   task?: "tts" | "music"
   /** 上游模型 ID 默认值（可在设置面板覆盖） */
   defaultModelId: string
   help?: string
 }
+
+export const TEXT_MODELS: AiModel[] = [
+  {
+    id: "gemini-2.5-flash-text",
+    label: "Gemini 2.5 Flash",
+    provider: "gemini",
+    kind: "text",
+    defaultModelId: "gemini-2.5-flash",
+  },
+  {
+    id: "gpt-4o-mini",
+    label: "OpenAI GPT-4o mini",
+    provider: "openai",
+    kind: "text",
+    defaultModelId: "gpt-4o-mini",
+  },
+]
 
 export const IMAGE_MODELS: AiModel[] = [
   {
@@ -88,14 +105,25 @@ export const AUDIO_VOICES: AiVoice[] = [
   { id: "presenter_male", label: "主持人男声" },
 ]
 
-export function modelsForKind(kind: "image" | "video" | "audio"): AiModel[] {
+export function modelsForKind(kind: "image" | "video" | "audio" | "text"): AiModel[] {
   if (kind === "video") return VIDEO_MODELS
   if (kind === "audio") return AUDIO_MODELS
+  if (kind === "text") return TEXT_MODELS
   return IMAGE_MODELS
 }
 
+/** 把模型列表按厂商分组，保持原数组内的顺序 */
+export function groupModelsByProvider(models: AiModel[]): { provider: AiProvider; models: AiModel[] }[] {
+  const map = new Map<AiProvider, AiModel[]>()
+  for (const m of models) {
+    if (!map.has(m.provider)) map.set(m.provider, [])
+    map.get(m.provider)!.push(m)
+  }
+  return Array.from(map.entries()).map(([provider, models]) => ({ provider, models }))
+}
+
 export function getModelById(id: string): AiModel | undefined {
-  return [...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS].find((m) => m.id === id)
+  return [...TEXT_MODELS, ...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS].find((m) => m.id === id)
 }
 
 /** 设置面板覆盖优先，否则用默认值 */
