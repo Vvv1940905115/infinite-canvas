@@ -20,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "aiServerPlugin.ts", "vibex-local/vite.local.config.ts"]
+  "include": ["vite.config.ts", "aiServerPlugin.ts", "assetLibraryPlugin.ts", "vibex-local/vite.local.config.ts"]
 }

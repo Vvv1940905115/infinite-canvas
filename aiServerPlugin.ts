@@ -6,6 +6,7 @@ import path from "node:path"
 // 提交任务 → 轮询状态 → 成功后在服务端下载视频落盘到资源库。
 
 const ARK_DEFAULT_BASE = "https://ark.cn-beijing.volces.com/api/v3"
+const MINIMAX_DEFAULT_BASE = "https://api.minimax.chat/v1"
 const VIDEO_DIR = "视频"
 const ASSET_ROOT_DEFAULT = path.resolve(process.cwd(), "output/assets")
 
@@ -151,6 +152,54 @@ export function aiServerPlugin() {
           }
         }
         return next()
+      })
+
+      // ---- POST /api/ai/tts：MiniMax 文字转语音 / 音乐生成，同步返回音频 dataUrl ----
+      // MiniMax t2a_v2 / music_generation 返回 data.audio 为 hex 编码，需转 base64 data URL。
+      server.middlewares.use("/api/ai/tts", async (req: any, res: any, next: any) => {
+        if (req.method !== "POST") return next()
+        let body: any
+        try {
+          body = await readJsonBody(req)
+        } catch {
+          return sendJson(res, 400, { ok: false, error: "invalid JSON body" })
+        }
+        const { model, task, text, voice, apiKey, groupId } = body
+        const base = (body.base || MINIMAX_DEFAULT_BASE).replace(/\/+$/, "")
+        if (!model || !text?.trim() || !apiKey?.trim() || !groupId?.trim()) {
+          return sendJson(res, 400, { ok: false, error: "缺少 model/text/apiKey/groupId" })
+        }
+        const url =
+          task === "music"
+            ? `${base}/music_generation?GroupId=${encodeURIComponent(groupId)}`
+            : `${base}/t2a_v2?GroupId=${encodeURIComponent(groupId)}`
+        const payload =
+          task === "music"
+            ? { model, prompt: text }
+            : {
+                model,
+                text,
+                stream: false,
+                voice_setting: { voice_id: voice || "female-chengshu", speed: 1, vol: 1, pitch: 0 },
+                audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3", channel: 1 },
+              }
+        try {
+          const { status, data } = await fetchJson(url, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(120_000),
+          })
+          const audioHex: string | undefined = data?.data?.audio || data?.audio
+          if (!audioHex) {
+            const msg = data?.base_resp?.status_msg || upstreamError(data, "上游未返回音频")
+            return sendJson(res, status >= 500 ? 502 : 400, { ok: false, error: msg })
+          }
+          const buf = Buffer.from(audioHex, "hex")
+          return sendJson(res, 200, { ok: true, dataUrl: `data:audio/mpeg;base64,${buf.toString("base64")}` })
+        } catch (err: any) {
+          return sendJson(res, 502, { ok: false, error: err?.message || "语音生成失败" })
+        }
       })
 
       // ---- POST /api/ai/image：同步生成图片，返回 dataUrl ----

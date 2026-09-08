@@ -6,6 +6,7 @@ import {
   Maximize,
   MousePointer2,
   Plus,
+  Sparkles,
   ZoomIn,
   ZoomOut,
   type LucideIcon,
@@ -43,6 +44,8 @@ interface CanvasToolbarProps {
   canvasMode: CanvasMode
   menuOpen: boolean
   onToggleMenu: () => void
+  aiMenuOpen: boolean
+  onToggleAiMenu: () => void
   onSetMode: (mode: CanvasMode) => void
   onZoomIn: () => void
   onZoomOut: () => void
@@ -56,6 +59,8 @@ export function CanvasToolbar({
   canvasMode,
   menuOpen,
   onToggleMenu,
+  aiMenuOpen,
+  onToggleAiMenu,
   onSetMode,
   onZoomIn,
   onZoomOut,
@@ -69,12 +74,26 @@ export function CanvasToolbar({
       <div className="flex flex-col items-center gap-1 rounded-2xl border border-border bg-popover/90 p-2 shadow-2xl backdrop-blur">
         <button
           type="button"
-          aria-label="添加节点或资源"
-          title="添加节点或资源"
-          onClick={onToggleMenu}
+          aria-label="添加节点"
+          title="添加节点（AI 生成）"
+          onClick={onToggleAiMenu}
           className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Plus className={cn("h-5 w-5 transition-transform duration-200", menuOpen && "rotate-45")} />
+          <Plus className={cn("h-5 w-5 transition-transform duration-200", aiMenuOpen && "rotate-45")} />
+        </button>
+        <button
+          type="button"
+          aria-label="素材导入"
+          title="素材导入：上传本地图片/视频或从历史作品导入"
+          onClick={onToggleMenu}
+          className={cn(
+            "flex h-10 w-10 items-center justify-center rounded-full border border-border shadow-lg transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            menuOpen
+              ? "bg-foreground text-background"
+              : "bg-popover text-foreground hover:bg-primary/15",
+          )}
+        >
+          <Sparkles className={cn("h-5 w-5 transition-transform duration-200", menuOpen && "rotate-45")} />
         </button>
         <div className="h-px w-6 bg-border" />
         <ToolButton

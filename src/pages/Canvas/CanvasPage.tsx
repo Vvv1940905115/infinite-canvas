@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { FolderPlus, Settings, Users } from "lucide-react"
 import { AddMenu } from "@/components/canvas/AddMenu"
+import { AiNodeMenu } from "@/components/canvas/AiNodeMenu"
 import { CanvasNode } from "@/components/canvas/CanvasNode"
 import { CanvasStatusBar } from "@/components/canvas/CanvasStatusBar"
 import { CanvasToolbar } from "@/components/canvas/CanvasToolbar"
@@ -155,6 +156,7 @@ export function CanvasPage(p: ReturnType<typeof useCanvas>) {
             onOpenAdd={p.openMenu}
             onImageUpload={p.updateImageUrl}
             onImageRemove={p.removeImageUrl}
+            connectedMedia={p.nodeMediaMap[node.id]}
             imageNodes={p.nodes
               .filter((n) => n.kind === "image" && n.imageUrl)
               .map((n) => ({
@@ -245,7 +247,7 @@ export function CanvasPage(p: ReturnType<typeof useCanvas>) {
       {p.nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
           <div className="rounded-full border border-dashed border-border bg-popover/80 px-6 py-3 text-sm text-muted-foreground shadow-md backdrop-blur">
-            画布空了，点左上角的圆形 + 按钮添加第一个节点
+            画布空了，点左上角 + 导入素材，或 ✨ 添加 AI 生成节点
           </div>
         </div>
       )}
@@ -259,6 +261,8 @@ export function CanvasPage(p: ReturnType<typeof useCanvas>) {
         canvasMode={p.canvasMode}
         menuOpen={p.menuOpen}
         onToggleMenu={p.toggleMenu}
+        aiMenuOpen={p.aiMenuOpen}
+        onToggleAiMenu={p.toggleAiMenu}
         onSetMode={p.setCanvasMode}
         onZoomIn={p.zoomIn}
         onZoomOut={p.zoomOut}
@@ -330,19 +334,36 @@ export function CanvasPage(p: ReturnType<typeof useCanvas>) {
         onClose={() => setAssetLibraryOpen(false)}
         assetRoot={paths.assetLibrary}
         refreshKey={assetRefreshKey}
+        onUseAsset={(asset) => p.addAssetAtPointer(asset)}
       />
 
       <AddMenu
         open={p.menuOpen}
-        onPick={(kind) => (kind === "upload" ? p.requestUploadAtPointer() : p.addNodeAtPointer(kind))}
+        onUpload={p.requestUploadAtPointer}
+        onImport={() => {
+          p.closeMenu()
+          setHistoryOpen(false)
+          setHelpOpen(false)
+          setAssetLibraryOpen(true)
+        }}
         onClose={p.closeMenu}
+        assetRoot={paths.assetLibrary}
+        onUseAsset={(asset) => p.addAssetAtPointer(asset)}
       />
 
-      {/* 隐藏的文件选择器：右键「上传」/ 菜单「上传文件」共用 */}
+      <AiNodeMenu
+        open={p.aiMenuOpen}
+        onPick={(kind) => p.addNodeAtPointer(kind)}
+        onClose={p.closeAiMenu}
+        assetRoot={paths.assetLibrary}
+        onUseAsset={(asset) => p.addAssetAtPointer(asset)}
+      />
+
+      {/* 隐藏的文件选择器：右键「上传」/ 菜单「上传文件」/ 素材导入「上传」共用 */}
       <input
         ref={p.fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         className="hidden"
         onChange={p.onUploadFiles}
       />

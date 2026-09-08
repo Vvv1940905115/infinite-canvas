@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { PATH_META, openInExplorer, type PathConfig, type PathKey } from "@/lib/paths"
-import { IMAGE_MODELS, VIDEO_MODELS } from "@/lib/aiModels"
+import { AUDIO_MODELS, IMAGE_MODELS, VIDEO_MODELS } from "@/lib/aiModels"
 import type { AiSection, AiSettings } from "@/lib/aiSettings"
 
 interface SettingsPanelProps {
@@ -17,7 +17,7 @@ interface SettingsPanelProps {
   onClose: () => void
 }
 
-const AI_MODELS = [...IMAGE_MODELS, ...VIDEO_MODELS]
+const AI_MODELS = [...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS]
 
 /**
  * 设置面板：直接嵌入画布界面右侧，无需弹窗 / 跳转。
@@ -145,6 +145,29 @@ export function SettingsPanel({
               autoComplete="off"
               placeholder="ARK_API_KEY"
               onChange={(e) => onAiUpdate("apiKeys", "seedance", e.target.value)}
+              className="flex-1"
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="block text-sm font-medium text-foreground">MiniMax API Key（语音 / 音乐）</span>
+            <Input
+              type="password"
+              value={ai.apiKeys.minimax}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="eyJ..."
+              onChange={(e) => onAiUpdate("apiKeys", "minimax", e.target.value)}
+              className="flex-1"
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="block text-sm font-medium text-foreground">MiniMax GroupId</span>
+            <Input
+              value={ai.apiKeys.minimaxGroup}
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="MiniMax 账号 GroupId"
+              onChange={(e) => onAiUpdate("apiKeys", "minimaxGroup", e.target.value)}
               className="flex-1"
             />
           </label>

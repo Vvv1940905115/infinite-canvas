@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react"
  */
 
 export interface AiSettings {
-  apiKeys: { gemini: string; openai: string; seedance: string }
+  apiKeys: { gemini: string; openai: string; seedance: string; minimax: string; minimaxGroup: string }
   /** 火山方舟 base URL */
   baseUrl: string
   /** model.id -> 上游模型 ID 覆盖；空串 = 用默认 */
@@ -18,7 +18,7 @@ export type AiSection = "apiKeys" | "modelIds" | "baseUrl"
 const STORAGE_KEY = "vibex.canvas.ai"
 
 const DEFAULT_AI: AiSettings = {
-  apiKeys: { gemini: "", openai: "", seedance: "" },
+  apiKeys: { gemini: "", openai: "", seedance: "", minimax: "", minimaxGroup: "" },
   baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
   modelIds: {},
 }

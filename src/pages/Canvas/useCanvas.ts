@@ -100,6 +100,7 @@ export function useCanvas() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [aiMenuOpen, setAiMenuOpen] = useState(false)
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("move")
   const [editingId, setEditingId] = useState<string | null>(null)
   const [edges, setEdges] = useState<CanvasEdgeItem[]>([])
@@ -171,6 +172,36 @@ export function useCanvas() {
   useEffect(() => {
     groupSelRef.current = selectedGroupId
   }, [selectedGroupId])
+
+  // ---- 节点间媒体数据流：沿连线 from→to 传递，下游节点在 AI 面板显示连线传入的媒体预览（支持多上游与链路多级传递）----
+  const nodeMediaMap = useMemo(() => {
+    const map: Record<string, { url: string; kind: NodeKind }[]> = {}
+    const mediaOf = (id: string): { url: string; kind: NodeKind }[] => {
+      const n = nodes.find((nn) => nn.id === id)
+      const own: { url: string; kind: NodeKind }[] = []
+      if (n?.imageUrl) own.push({ url: n.imageUrl, kind: n.kind })
+      if (n?.slotImages?.[0]) own.push({ url: n.slotImages[0], kind: n.kind })
+      if (own.length > 0) return own
+      return map[id] ?? []
+    }
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const edge of edges) {
+        const src = mediaOf(edge.from)
+        const prev = map[edge.to] ?? []
+        const merged = [...prev]
+        for (const m of src) {
+          if (!merged.some((x) => x.url === m.url)) merged.push(m)
+        }
+        if (merged.length !== prev.length) {
+          map[edge.to] = merged
+          changed = true
+        }
+      }
+    }
+    return map
+  }, [nodes, edges])
 
   const toLocal = useCallback((clientX: number, clientY: number) => {
     const el = containerRef.current
@@ -258,6 +289,7 @@ export function useCanvas() {
       const p = toLocal(e.clientX, e.clientY)
       const cam = cameraRef.current
       setMenuOpen(false)
+      setAiMenuOpen(false)
       setContextMenu({ x: p.x, y: p.y, worldX: (p.x - cam.x) / cam.scale, worldY: (p.y - cam.y) / cam.scale })
     },
     [toLocal],
@@ -458,6 +490,7 @@ export function useCanvas() {
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.button !== 0) return
       setMenuOpen(false)
+      setAiMenuOpen(false)
       setEditingId(null)
       setContextMenu(null)
       const p = toLocal(e.clientX, e.clientY)
@@ -485,6 +518,7 @@ export function useCanvas() {
       if (e.button !== 0) return
       e.stopPropagation()
       setMenuOpen(false)
+      setAiMenuOpen(false)
       const already = selectedRef.current.includes(node.id)
       let ids: string[]
       if (e.shiftKey) {
@@ -564,6 +598,7 @@ export function useCanvas() {
       setNodes((list) => [...list, node])
       setSelectedIds([node.id])
       setMenuOpen(false)
+      setAiMenuOpen(false)
       setContextMenu(null)
       return node.id
     },
@@ -639,10 +674,25 @@ export function useCanvas() {
       const reader = new FileReader()
       reader.onload = () => {
         const url = typeof reader.result === "string" ? reader.result : undefined
-        if (url) createNodeAt("image", at.x, at.y, url)
+        if (!url) return
+        // 按文件类型落位：视频 → 视频节点，其余（图片）→ 图片节点
+        const kind: NodeKind = file.type.startsWith("video/") ? "video" : "image"
+        createNodeAt(kind, at.x, at.y, url)
       }
       reader.readAsDataURL(file)
       input.value = ""
+    },
+    [createNodeAt],
+  )
+
+  /** 从资源库/历史作品素材导入：在指针位置按素材类型生成节点 */
+  const addAssetAtPointer = useCallback(
+    (asset: { category: string; name: string; path: string }) => {
+      const p = canvasPointerRef.current
+      const cam = cameraRef.current
+      const kind: NodeKind =
+        asset.category === "视频" ? "video" : asset.category === "音频" ? "audio" : "image"
+      createNodeAt(kind, (p.x - cam.x) / cam.scale, (p.y - cam.y) / cam.scale, asset.path)
     },
     [createNodeAt],
   )
@@ -664,9 +714,30 @@ export function useCanvas() {
   const zoomIn = useCallback(() => zoomBy(1.25), [zoomBy])
   const zoomOut = useCallback(() => zoomBy(0.8), [zoomBy])
   const resetView = useCallback(() => setCamera(HOME_CAMERA), [])
-  const toggleMenu = useCallback(() => setMenuOpen((v) => !v), [])
-  const openMenu = useCallback(() => setMenuOpen(true), [])
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((v) => {
+      const next = !v
+      if (next) setAiMenuOpen(false)
+      return next
+    })
+  }, [])
+  const openMenu = useCallback(() => {
+    setAiMenuOpen(false)
+    setMenuOpen(true)
+  }, [])
   const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const toggleAiMenu = useCallback(() => {
+    setAiMenuOpen((v) => {
+      const next = !v
+      if (next) setMenuOpen(false)
+      return next
+    })
+  }, [])
+  const openAiMenu = useCallback(() => {
+    setMenuOpen(false)
+    setAiMenuOpen(true)
+  }, [])
+  const closeAiMenu = useCallback(() => setAiMenuOpen(false), [])
   const toggleAiPanel = useCallback(() => setAiPanelCollapsed((v) => !v), [])
 
   // ---- 分组：把选中的多个节点打包成组，可在组层面整体管理 ----
@@ -815,6 +886,7 @@ export function useCanvas() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setMenuOpen(false)
+        setAiMenuOpen(false)
         setEditingId(null)
         setContextMenu(null)
         setPortPopup(null)
@@ -922,9 +994,11 @@ export function useCanvas() {
     camera,
     gridStyle,
     nodes,
+    nodeMediaMap,
     selectedIds,
     marquee,
     menuOpen,
+    aiMenuOpen,
     canvasMode,
     zoomPercent: Math.round(camera.scale * 100),
     nodeCount: nodes.length,
@@ -935,6 +1009,10 @@ export function useCanvas() {
     toggleMenu,
     openMenu,
     closeMenu,
+    toggleAiMenu,
+    openAiMenu,
+    closeAiMenu,
+    addAssetAtPointer,
     addNodeAtPointer,
     setCanvasMode,
     zoomIn,

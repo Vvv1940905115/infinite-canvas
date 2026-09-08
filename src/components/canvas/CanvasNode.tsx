@@ -1,9 +1,11 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import {
   ArrowUp,
+  AudioLines,
   ChevronDown,
   ChevronUp,
   Mic,
+  Music,
   Plus,
   Replace,
   Sparkles,
@@ -12,10 +14,18 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { CanvasNodeItem } from "@/pages/Canvas/useCanvas"
+import type { NodeKind } from "./nodeTypes"
 import { NODE_META } from "./nodeTypes"
-import { getModelById, getModelId, modelsForKind, PROVIDER_LABEL } from "@/lib/aiModels"
+import {
+  AUDIO_MODELS,
+  AUDIO_VOICES,
+  getModelById,
+  getModelId,
+  modelsForKind,
+  PROVIDER_LABEL,
+} from "@/lib/aiModels"
 import type { AiSettings } from "@/lib/aiSettings"
-import { generateImage, pollVideoTask, submitVideoTask } from "@/lib/aiClient"
+import { generateImage, generateSpeech, pollVideoTask, submitVideoTask } from "@/lib/aiClient"
 import { toast } from "sonner"
 import {
   Select,
@@ -258,6 +268,8 @@ interface CanvasNodeProps {
   onOpenAdd: () => void
   onImageUpload?: (id: string, dataUrl: string) => void
   onImageRemove?: (id: string) => void
+  /** 下游节点通过连线接收的上游媒体列表（仅在下方 AI 面板显示预览，不替换节点本体） */
+  connectedMedia?: { url: string; kind: NodeKind }[]
   imageNodes?: { id: string; imageUrl: string; label: string }[]
   onSlotUpload?: (id: string, slot: number, dataUrl: string) => void
   onSlotRemove?: (id: string, slot: number) => void
@@ -283,6 +295,7 @@ export function CanvasNode({
   onOpenAdd,
   onImageUpload,
   onImageRemove,
+  connectedMedia,
   imageNodes,
   onSlotUpload,
   onSlotRemove,
@@ -296,6 +309,15 @@ export function CanvasNode({
   const isMedia = node.kind === "image" || node.kind === "video" || node.kind === "audio"
   const mediaLabel = node.kind === "video" ? "视频" : node.kind === "audio" ? "音频" : "图片"
   const hasMedia = Boolean(node.imageUrl)
+  // 媒体 URL：仅本地手动上传/生成；连线传入的媒体只在下方 AI 面板显示预览（connectedMedia），不替换节点本体
+  const mediaUrl = node.imageUrl
+  const hasDisplayMedia = Boolean(mediaUrl)
+  // 角色/场景节点：连线传入的第一个媒体回退展示为主图（slot 0），本地手动上传优先
+  const isCharacterScene = node.kind === "character" || node.kind === "scene"
+  const slotImagesForDisplay =
+    isCharacterScene && connectedMedia?.length && !node.slotImages?.[0]
+      ? { ...(node.slotImages ?? {}), 0: connectedMedia[0].url }
+      : node.slotImages
   const [prompt, setPrompt] = useState("")
   // 根据节点类型自动决定保存分类：图片/视频/音频节点一一对应，其余默认图片
   const assetCategory = node.kind === "video" ? "视频" : node.kind === "audio" ? "音频" : "图片"
@@ -307,6 +329,13 @@ export function CanvasNode({
   const modelOptions = modelsForKind(isVideoNode ? "video" : "image")
   const [modelKey, setModelKey] = useState(() => modelOptions[0].id)
   const model = getModelById(modelKey) ?? modelOptions[0]
+
+  // 音频节点：文字转语音 / 音乐生成（MiniMax）
+  const [audioTask, setAudioTask] = useState<"tts" | "music">("tts")
+  const audioTaskModels = AUDIO_MODELS.filter((m) => m.task === audioTask)
+  const [audioModelKey, setAudioModelKey] = useState(() => AUDIO_MODELS[0].id)
+  const audioModel = audioTaskModels.find((m) => m.id === audioModelKey) ?? audioTaskModels[0]
+  const [voiceKey, setVoiceKey] = useState(() => AUDIO_VOICES[0].id)
 
   /** 触发文件选择（替换图片共用入口） */
   const pickFile = () => fileInputRef.current?.click()
@@ -363,7 +392,7 @@ export function CanvasNode({
         {/* 媒体节点（图片 / 视频）：空节点顶部居中【上传】；有媒体后右上角【替换/删除】+ 底部【替换】 */}
         {isMedia && (
           <>
-            {!hasMedia && (
+            {!hasDisplayMedia && (
               <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2">
                 <button
                   type="button"
@@ -461,10 +490,10 @@ export function CanvasNode({
                   {node.title || (node.kind === "character" ? "未命名角色" : "未命名场景")}
                 </span>
               )}
-              {node.slotImages?.[0] && (
+              {slotImagesForDisplay?.[0] && (
                 <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-border bg-card">
                   <img
-                    src={node.slotImages[0]}
+                    src={slotImagesForDisplay[0]}
                     alt="主图"
                     className="h-full w-full object-cover"
                   />
@@ -483,26 +512,26 @@ export function CanvasNode({
             />
             <PlusGridMenu
               imageNodes={imageNodes}
-              slotImages={node.slotImages}
+              slotImages={slotImagesForDisplay}
               onSlotUpload={(slot, url) => onSlotUpload?.(node.id, slot, url)}
               onSlotRemove={(slot) => onSlotRemove?.(node.id, slot)}
             />
           </div>
-        ) : hasMedia ? (
+        ) : hasDisplayMedia ? (
           node.kind === "video" ? (
             <video
-              src={node.imageUrl}
+              src={mediaUrl}
               controls
               playsInline
               className="h-full w-full rounded-xl border border-border/60 bg-black object-contain"
             />
           ) : node.kind === "audio" ? (
             <div className="flex h-full w-full items-center justify-center rounded-xl border border-border/60 bg-card p-2">
-              <audio src={node.imageUrl} controls className="w-full" />
+              <audio src={mediaUrl} controls className="w-full" />
             </div>
           ) : (
             <img
-              src={node.imageUrl}
+              src={mediaUrl}
               alt={meta.label}
               draggable={false}
               className="h-full w-full rounded-xl border border-border/60 object-cover"
@@ -545,7 +574,7 @@ export function CanvasNode({
           onLinkComplete?.(node.id, "left")
         }}
         className={cn(
-          "absolute -left-8 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/40 bg-background/80 text-foreground/70 transition-opacity hover:border-primary hover:text-primary",
+          "absolute -left-8 top-1/2 z-30 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/40 bg-background/80 text-foreground/70 transition-opacity hover:border-primary hover:text-primary",
           selected ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       >
@@ -561,16 +590,206 @@ export function CanvasNode({
           onLinkComplete?.(node.id, "right")
         }}
         className={cn(
-          "absolute -right-8 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/40 bg-background/80 text-foreground/70 transition-opacity hover:border-primary hover:text-primary",
+          "absolute -right-8 top-1/2 z-30 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-foreground/40 bg-background/80 text-foreground/70 transition-opacity hover:border-primary hover:text-primary",
           selected ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
 
-      {/* AI 输入面板：选中时出现在节点下方；媒体节点上传后隐藏，空媒体节点仍显示；角色/场景/音频节点不显示 */}
+      {/* 音频节点：文字转语音 / 音乐生成面板（MiniMax），选中时出现在节点下方 */}
+      {selected && node.kind === "audio" &&
+        (panelCollapsed ? (
+          <button
+            type="button"
+            onPointerDown={stop}
+            onDoubleClick={stop}
+            onClick={onTogglePanel}
+            className="absolute left-1/2 top-full mt-3 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-popover px-3.5 py-1.5 text-xs font-medium text-foreground shadow-lg"
+          >
+            <AudioLines className="h-3.5 w-3.5 text-primary" />
+            {audioTask === "music" ? "音乐" : "文字转语音"}
+            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        ) : (
+          <div
+            className="absolute left-1/2 top-full z-20 mt-4 w-[480px] -translate-x-1/2 rounded-2xl border border-border bg-popover p-3 shadow-2xl"
+            onPointerDown={stop}
+            onDoubleClick={stop}
+          >
+            <div className="flex items-start justify-end">
+              <button
+                type="button"
+                aria-label="收起面板"
+                title="收起面板"
+                onClick={onTogglePanel}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/15 hover:text-foreground"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </div>
+            {/* 连线传入的媒体预览（音频节点同样显示） */}
+            {connectedMedia && connectedMedia.length > 0 && (
+              <div className="mb-1 flex flex-wrap items-end gap-x-2.5 gap-y-1.5">
+                {connectedMedia.map((m, i) => {
+                  const kindLabel = m.kind === "video" ? "视频" : m.kind === "audio" ? "音频" : "图片"
+                  const index = connectedMedia.slice(0, i + 1).filter((x) => x.kind === m.kind).length
+                  return (
+                    <div key={`${m.url}-${i}`} className="flex w-11 flex-col items-center gap-0.5">
+                      {m.kind === "audio" ? (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                          <AudioLines className="h-4 w-4" />
+                        </div>
+                      ) : m.kind === "video" ? (
+                        <video
+                          src={m.url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-10 w-10 rounded-lg bg-black object-cover ring-1 ring-border"
+                        />
+                      ) : (
+                        <img
+                          src={m.url}
+                          alt="连线传入媒体"
+                          draggable={false}
+                          className="h-10 w-10 rounded-lg object-cover ring-1 ring-border"
+                        />
+                      )}
+                      <span className="text-[10px] leading-none text-muted-foreground">
+                        {kindLabel} {index}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <textarea
+              value={prompt}
+              placeholder={
+                audioTask === "music" ? "描述你想要的音乐风格或输入歌词" : "输入你想转换成语音的文本内容"
+              }
+              rows={3}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              className="mt-1 w-full cursor-text resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {/* 任务类型：文字转语音 / 音乐 */}
+              <Select
+                value={audioTask}
+                onValueChange={(v) => {
+                  const next = v as "tts" | "music"
+                  setAudioTask(next)
+                  const first = AUDIO_MODELS.find((m) => m.task === next)
+                  if (first) setAudioModelKey(first.id)
+                }}
+              >
+                <SelectTrigger className="h-8 w-[120px] text-xs" aria-label="选择生成任务">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tts">
+                    <span className="flex flex-col">
+                      <span className="flex items-center gap-1.5 text-xs font-medium">
+                        <Mic className="h-3.5 w-3.5" />
+                        文字转语音
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">将文本转换为语音</span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="music">
+                    <span className="flex flex-col">
+                      <span className="flex items-center gap-1.5 text-xs font-medium">
+                        <Music className="h-3.5 w-3.5" />
+                        音乐
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">按描述生成音乐</span>
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {/* 模型：跟随任务类型 */}
+              <Select value={audioModel?.id ?? ""} onValueChange={setAudioModelKey}>
+                <SelectTrigger className="h-8 w-[190px] text-xs" aria-label="选择模型">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {audioTaskModels.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* 音色：仅文字转语音 */}
+              {audioTask === "tts" && (
+                <Select value={voiceKey} onValueChange={setVoiceKey}>
+                  <SelectTrigger className="h-8 w-[150px] text-xs" aria-label="选择音色">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUDIO_VOICES.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <span className="ml-auto text-xs text-muted-foreground">保存到：音频</span>
+              <button
+                type="button"
+                aria-label="生成"
+                title="生成"
+                disabled={generating || !prompt.trim()}
+                onClick={async () => {
+                  const text = prompt.trim()
+                  if (!text || !audioModel) return
+                  const apiKey = ai.apiKeys.minimax?.trim()
+                  if (!apiKey) {
+                    toast.error("请先在设置中填写 MiniMax API Key")
+                    return
+                  }
+                  const groupId = ai.apiKeys.minimaxGroup?.trim()
+                  if (!groupId) {
+                    toast.error("请先在设置中填写 MiniMax GroupId")
+                    return
+                  }
+                  setGenerating(true)
+                  try {
+                    onChangeContent(node.id, text)
+                    const { dataUrl } = await generateSpeech({
+                      model: getModelId(audioModel, ai.modelIds),
+                      task: audioTask,
+                      text,
+                      voice: voiceKey,
+                      apiKey,
+                      groupId,
+                    })
+                    const saved = await saveAsset("音频", dataUrl, assetRoot || "")
+                    onImageUpload?.(node.id, saved.path!)
+                    onAssetSaved?.(saved.category!, saved.name!, saved.path!)
+                    toast.success(audioTask === "music" ? "音乐已生成并保存" : "语音已生成并保存")
+                    setPrompt("")
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "生成失败")
+                  } finally {
+                    setGenerating(false)
+                  }
+                }}
+                className="flex h-8 items-center gap-1 rounded-full bg-primary/90 px-3.5 text-xs font-medium text-primary-foreground shadow-md transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {generating ? "生成中…" : "生成"}
+                <ArrowUp className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ))}
+
+      {/* AI 输入面板：选中时出现在节点下方；媒体节点上传后隐藏，空媒体节点仍显示；角色/场景节点不显示（音频节点用上方专用面板） */}
       {selected && !(node.kind === "character" || node.kind === "scene" || node.kind === "audio") &&
-        !(isMedia && hasMedia) &&
+        !(isMedia && hasDisplayMedia) &&
         (panelCollapsed ? (
           <button
             type="button"
@@ -609,6 +828,42 @@ export function CanvasNode({
                 <ChevronDown className="h-4 w-4" />
               </button>
             </div>
+            {/* 连线传入的媒体预览：多个上游媒体节点连线到本节点时逐条显示（图片缩略图 / 视频首帧 / 音频图标） */}
+            {connectedMedia && connectedMedia.length > 0 && (
+              <div className="mt-1 flex flex-wrap items-end gap-x-2.5 gap-y-1.5">
+                {connectedMedia.map((m, i) => {
+                  const kindLabel = m.kind === "video" ? "视频" : m.kind === "audio" ? "音频" : "图片"
+                  const index = connectedMedia.slice(0, i + 1).filter((x) => x.kind === m.kind).length
+                  return (
+                    <div key={`${m.url}-${i}`} className="flex w-11 flex-col items-center gap-0.5">
+                      {m.kind === "audio" ? (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                          <AudioLines className="h-4 w-4" />
+                        </div>
+                      ) : m.kind === "video" ? (
+                        <video
+                          src={m.url}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-10 w-10 rounded-lg bg-black object-cover ring-1 ring-border"
+                        />
+                      ) : (
+                        <img
+                          src={m.url}
+                          alt="连线传入媒体"
+                          draggable={false}
+                          className="h-10 w-10 rounded-lg object-cover ring-1 ring-border"
+                        />
+                      )}
+                      <span className="text-[10px] leading-none text-muted-foreground">
+                        {kindLabel} {index}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             <textarea
               value={prompt}
               placeholder="描述任何你想要生成的内容"

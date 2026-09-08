@@ -24,6 +24,24 @@ export async function generateImage(req: GenerateImageReq): Promise<{ dataUrl: s
   return post("/api/ai/image", req)
 }
 
+export interface GenerateSpeechReq {
+  /** 上游模型 ID（MiniMax-Speech-2.8-Turbo / music-1.5 等） */
+  model: string
+  /** tts = 文字转语音，music = 音乐生成 */
+  task: "tts" | "music"
+  /** 要转换的文本（tts）或音乐描述/歌词（music） */
+  text: string
+  /** TTS 音色 voice_id（task 为 music 时忽略） */
+  voice?: string
+  apiKey: string
+  /** MiniMax 账号 GroupId */
+  groupId: string
+}
+
+export async function generateSpeech(req: GenerateSpeechReq): Promise<{ dataUrl: string }> {
+  return post("/api/ai/tts", req)
+}
+
 export interface SubmitVideoReq {
   model: string
   prompt: string
