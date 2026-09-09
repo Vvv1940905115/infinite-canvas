@@ -541,6 +541,7 @@ export function CanvasNode({
   const [audioModelKey, setAudioModelKey] = useState(() => AUDIO_MODELS[0].id)
   const audioModel = audioTaskModels.find((m) => m.id === audioModelKey) ?? audioTaskModels[0]
   const [voiceKey, setVoiceKey] = useState(() => AUDIO_VOICES[0].id)
+  const [voiceOpen, setVoiceOpen] = useState(false)
 
   // 文本节点：普通文本 / 歌词生成
   const [textTask, setTextTask] = useState<"text" | "lyrics">("text")
@@ -982,16 +983,49 @@ export function CanvasNode({
             onPointerDown={stop}
             onDoubleClick={stop}
           >
-            <div className="flex items-start justify-end">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="truncate">{audioTask === "music" ? "音乐生成" : "文字转语音"}</span>
+              </span>
               <button
                 type="button"
                 aria-label="收起面板"
                 title="收起面板"
                 onClick={onTogglePanel}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/15 hover:text-foreground"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/15 hover:text-foreground"
               >
                 <ChevronDown className="h-4 w-4" />
               </button>
+            </div>
+            {/* 任务切换 tab：文字转语音 / 音乐（仿视频模式 tab 风格） */}
+            <div className="mt-2 -mx-1 flex gap-1 overflow-x-auto px-1 pb-1 scrollbar-hide">
+              {(["tts", "music"] as const).map((task) => {
+                const active = audioTask === task
+                const label = task === "music" ? "音乐生成" : "文字转语音"
+                const Icon = task === "music" ? Music : Mic
+                return (
+                  <button
+                    key={task}
+                    type="button"
+                    onClick={() => {
+                      setAudioTask(task)
+                      const first = AUDIO_MODELS.find((m) => m.task === task)
+                      if (first) setAudioModelKey(first.id)
+                    }}
+                    aria-pressed={active}
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                      active
+                        ? "bg-foreground text-background"
+                        : "border border-border bg-card text-foreground hover:bg-primary/10",
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </button>
+                )
+              })}
             </div>
             {/* 输入媒体预览：连线传入 + 追加输入 + 「+ 增加」（上传音频 / 从画布选择→自动连线） */}
             <div className="mb-1 flex flex-wrap items-end gap-x-2.5 gap-y-1.5">
@@ -1151,48 +1185,7 @@ export function CanvasNode({
               className="mt-1 w-full cursor-text resize-none bg-transparent text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {/* 任务类型：文字转语音 / 音乐 */}
-              <Select
-                value={audioTask}
-                onValueChange={(v) => {
-                  const next = v as "tts" | "music"
-                  setAudioTask(next)
-                  const first = AUDIO_MODELS.find((m) => m.task === next)
-                  if (first) setAudioModelKey(first.id)
-                }}
-              >
-                <SelectTrigger className="h-8 w-[118px] shrink-0 rounded-lg border-transparent bg-card text-xs font-medium text-foreground shadow-none hover:bg-card/70" aria-label="选择生成任务">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    {audioTask === "music" ? (
-                      <Music className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <Mic className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="truncate">{audioTask === "music" ? "音乐" : "文字转语音"}</span>
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tts">
-                    <span className="flex flex-col">
-                      <span className="flex items-center gap-1.5 text-xs font-medium">
-                        <Mic className="h-3.5 w-3.5" />
-                        文字转语音
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">将文本转换为语音</span>
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="music">
-                    <span className="flex flex-col">
-                      <span className="flex items-center gap-1.5 text-xs font-medium">
-                        <Music className="h-3.5 w-3.5" />
-                        音乐
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">按描述生成音乐</span>
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              {/* 模型：跟随任务类型 */}
+              {/* 模型：跟随任务类型（任务已通过顶部 tab 切换） */}
               <Select value={audioModel?.id ?? ""} onValueChange={setAudioModelKey}>
                 <SelectTrigger className="h-8 min-w-0 flex-1 rounded-lg border-transparent bg-card text-xs font-medium text-foreground shadow-none hover:bg-card/70" aria-label="选择模型">
                   <SelectValue />
@@ -1210,20 +1203,50 @@ export function CanvasNode({
                   ))}
                 </SelectContent>
               </Select>
-              {/* 音色：仅文字转语音 */}
+              {/* 语音设置：仅文字转语音（弹层，仿视频比例/分辨率弹层） */}
               {audioTask === "tts" && (
-                <Select value={voiceKey} onValueChange={setVoiceKey}>
-                  <SelectTrigger className="h-8 w-[130px] shrink-0 rounded-lg border-transparent bg-card text-xs font-medium text-foreground shadow-none hover:bg-card/70" aria-label="选择音色">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AUDIO_VOICES.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    aria-label="选择音色"
+                    title={AUDIO_VOICES.find((v) => v.id === voiceKey)?.label ?? "选择音色"}
+                    onClick={() => setVoiceOpen((v) => !v)}
+                    className="flex h-8 items-center gap-1.5 rounded-lg border-transparent bg-card px-2.5 text-xs font-medium text-foreground shadow-none transition-colors hover:bg-card/70"
+                  >
+                    <Mic className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {AUDIO_VOICES.find((v) => v.id === voiceKey)?.label ?? "音色"}
+                  </button>
+                  {voiceOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setVoiceOpen(false)} aria-hidden />
+                      <div className="absolute bottom-full left-0 z-40 mb-2 w-44 overflow-hidden rounded-2xl border border-border bg-popover p-1 shadow-2xl">
+                        <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground">音色</div>
+                        {AUDIO_VOICES.map((v) => {
+                          const sel = voiceKey === v.id
+                          return (
+                            <button
+                              key={v.id}
+                              type="button"
+                              onClick={() => {
+                                setVoiceKey(v.id)
+                                setVoiceOpen(false)
+                              }}
+                              className={cn(
+                                "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors",
+                                sel
+                                  ? "bg-foreground/10 text-foreground"
+                                  : "text-popover-foreground hover:bg-primary/10",
+                              )}
+                            >
+                              <Mic className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="truncate">{v.label}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
               <button
                 type="button"
