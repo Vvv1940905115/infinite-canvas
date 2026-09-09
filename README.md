@@ -1,4 +1,6 @@
 # 无限画布工作台 — 本地安装与运行最详细教程
+ > 正在更新中，优化报错
+
 
 <img width="1917" height="1015" alt="2223" src="https://github.com/user-attachments/assets/74902736-49cb-4977-8576-b30d6adbf64d" />
 
